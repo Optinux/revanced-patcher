@@ -17,12 +17,13 @@ internal class Io(
     private val output: OutputStream,
     private val classes: MutableList<ClassNode>
 ) {
-    private val bufferedInputStream = BufferedInputStream(input)
+    private val bis = BufferedInputStream(input)
+    private val classReaders = mutableMapOf<String, ClassReader>()
 
     fun readFromJar() {
-        bufferedInputStream.mark(Integer.MAX_VALUE)
+        bis.mark(Integer.MAX_VALUE)
         // create a BufferedInputStream in order to read the input stream again when calling saveAsJar(..)
-        val jis = JarInputStream(bufferedInputStream)
+        val jis = JarInputStream(bis)
 
         // read all entries from the input stream
         // we use JarEntry because we only read .class files
@@ -33,9 +34,14 @@ internal class Io(
                 // create a new ClassNode
                 val classNode = ClassNode()
                 // read the bytes with a ClassReader into the ClassNode
-                ClassReader(jis.readBytes()).accept(classNode, ClassReader.EXPAND_FRAMES)
+                val cr = ClassReader(jis)
+                cr.accept(
+                    classNode,
+                    ClassReader.EXPAND_FRAMES
+                )
                 // add it to our list
                 classes.add(classNode)
+                classReaders[jarEntry.name] = cr
             }
 
             // finally, close the entry
@@ -43,23 +49,19 @@ internal class Io(
         }
 
         // at last reset the buffered input stream
-        bufferedInputStream.reset()
+        bis.reset()
     }
 
     fun saveAsJar() {
-        val jis = ZipInputStream(bufferedInputStream)
+        val jis = ZipInputStream(bis)
         val jos = ZipOutputStream(output)
-        val classReaders = mutableMapOf<String, ClassReader>()
 
         // first write all non .class zip entries from the original input stream to the output stream
         // we read it first to close the input stream as fast as possible
         // TODO(oSumAtrIX): There is currently no way to remove non .class files.
         lateinit var zipEntry: ZipEntry
         while (jis.nextEntry.also { if (it != null) zipEntry = it } != null) {
-            if (zipEntry.name.endsWith(".class")) {
-                classReaders[zipEntry.name] = ClassReader(jis.readBytes())
-                continue
-            }
+            if (zipEntry.name.endsWith(".class")) continue
 
             // create a new zipEntry and write the contents of the zipEntry to the output stream and close it
             jos.putNextEntry(ZipEntry(zipEntry))
@@ -68,8 +70,8 @@ internal class Io(
         }
 
         // finally, close the input stream
-        jis.close()
-        bufferedInputStream.close()
+        jis.close() // this closes the underlying BufferedInputStream!
+        bis.close()
         input.close()
 
         // now write all the patched classes to the output stream
@@ -79,10 +81,7 @@ internal class Io(
             jos.putNextEntry(JarEntry(name))
 
             // parse the patched class to a byte array and write it to the output stream
-            val cw = ClassWriter(
-                classReaders[name]!!,
-                ClassWriter.COMPUTE_FRAMES or ClassWriter.COMPUTE_MAXS
-            )
+            val cw = ClassWriter(classReaders[name]!!, ClassWriter.COMPUTE_FRAMES)
             patchedClass.accept(cw)
             jos.write(cw.toByteArray())
 
