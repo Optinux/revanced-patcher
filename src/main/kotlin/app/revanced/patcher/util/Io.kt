@@ -1,5 +1,6 @@
 package app.revanced.patcher.util
 
+import app.revanced.patcher.writer.CachedClassWriter
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.tree.ClassNode
@@ -18,7 +19,7 @@ internal class Io(
     private val classes: MutableList<ClassNode>
 ) {
     private val bis = BufferedInputStream(input)
-    private val classReaders = mutableMapOf<String, ClassReader>()
+    private val classReaders = mutableMapOf<String, Pair<ClassReader, ClassNode>>()
 
     fun readFromJar() {
         bis.mark(Integer.MAX_VALUE)
@@ -41,7 +42,7 @@ internal class Io(
                 )
                 // add it to our list
                 classes.add(classNode)
-                classReaders[jarEntry.name] = cr
+                classReaders[jarEntry.name] = cr to classNode
             }
 
             // finally, close the entry
@@ -81,7 +82,8 @@ internal class Io(
             jos.putNextEntry(JarEntry(name))
 
             // parse the patched class to a byte array and write it to the output stream
-            val cw = ClassWriter(classReaders[name]!!, ClassWriter.COMPUTE_FRAMES)
+            val (cr) = classReaders[name]!!
+            val cw: ClassWriter = CachedClassWriter(classReaders, cr)
             patchedClass.accept(cw)
             jos.write(cw.toByteArray())
 

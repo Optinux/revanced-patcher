@@ -20,10 +20,7 @@ internal class MethodResolver(private val classList: List<ClassNode>, private va
         for ((classNode, methods) in classList) {
             for (method in methods) {
                 for (signature in signatures) {
-                    if (methodMap.containsKey(signature.name)) { // method already found for this sig
-                        logger.debug { "Sig ${signature.name} already found, skipping." }
-                        continue
-                    }
+                    if (methodMap.containsKey(signature.name)) continue // method already found for this sig
                     logger.debug { "Resolving sig ${signature.name}: ${classNode.name} / ${method.name}" }
                     val (r, sr) = cmp(method, signature)
                     if (!r || sr == null) {
